@@ -1,5 +1,9 @@
 # examplar-based image inpainting
 I, TongZhen, am responsible for the examplar image inpainting part 
-Some trick used in this project
-  1. user can change to the `apro_best_match` to randomly search a approximate matching patch
-  2. TODO
+## Run
+```
+python Examplar.py
+```
+这个项目中使用的一些trick
+  1. 用户可以选择在`Inpainter.exe_inpaint`函数选择 `approx=True`作为随机搜索`step`步近似匹配的patch
+  2. 待办事项
