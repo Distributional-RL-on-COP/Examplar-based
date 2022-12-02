@@ -11,3 +11,8 @@ python Examplar.py
 python Musk.py
 ```
 用来获得矩形的
+
+```python
+inpainter = Inpainter(img, mask, patch_size, show=False)
+```
+show = True的时候展示每步填充步骤
