@@ -269,9 +269,6 @@ class Inpainter:
         cv2.imwrite(filename, self.fill_image)
 
 
-
-
-
 if __name__ == "__main__":
     img_src = "D:\Courses_2022_Fall\ECE4513\Projects\src\MyCode\mask_color.jpg"
     mask_src = "D:\Courses_2022_Fall\ECE4513\Projects\src\MyCode\mask_black.jpg"

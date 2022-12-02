@@ -24,7 +24,6 @@ def get_square_mask(img, width = 200, height = 160):
     plt.show()
     return mask_img, mask_black[:,:,0]
         
-
 if __name__ == "__main__":
     
     new_im = cv2.imread("./img\input1.jpg")
