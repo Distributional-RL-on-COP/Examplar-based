@@ -6,8 +6,6 @@ import random
 
 from tqdm import tqdm
 
-import os
-
 class Inpainter:
     def __init__(self, img:np.ndarray, mask:np.ndarray, patch_size = 9, show = False):
 
@@ -18,8 +16,7 @@ class Inpainter:
         # all one in the fill_range
         self.fill_range = copy.deepcopy(mask)
 
-        # ##################
-        self.fill_image = np.where(np.dstack([self.mask, self.mask, self.mask])==1, np.zeros(shape=img.shape, dtype="uint8"), img)
+        self.fill_image = img
         # the fill front
         self.fill_front = self.update_contours()
         # C(p) and D(p) in the paper
@@ -46,18 +43,18 @@ class Inpainter:
     def get_data(self, img, patch:np.ndarray):
         """
         input the patch(2x2) return the image data in the patch
-        patch[0, 0]---------patch[1, 0]
-        |                   |
-        |                   |
-        |                   |
-        patch[0, 1]---------patch[1, 0]
+                        patch[1, 0]    patch[1, 1]
+                        |              |
+        patch[0, 0]-----x--------------x----------
+                        |              |
+                        |              |
+        patch[0, 1]-----x--------------x----------
         """
         return img[patch[0, 0]:patch[0, 1], patch[1, 0]:patch[1, 1]]
 
     def get_patch(self,point):
-        """
-        given a point return a patch of size patch_size x patch_size
-        """
+
+        # given a point return a patch of size patch_size x patch_size
         k = self.patch_size // 2
         # consider the domain edge
         patch_range = [[max(0, point[0]-k), min(point[0]+k+1, self.h)], 
@@ -65,7 +62,8 @@ class Inpainter:
         return np.array(patch_range)
 
     def update_C(self):
-        for point in self.fill_range:
+        print()
+        for point in self.fill_front:
             patch = self.get_patch(point)
             confidence_sum = self.get_data(self.confidence, patch).sum()
             # Because the domain edge issue, we cannot direct get patch_size x patch_size as a area
@@ -123,6 +121,32 @@ class Inpainter:
         self.update_D()
         # set 0 in the already filled region, update the priority in the unfilled region
         priority = self.confidence*self.data*self.fill_range
+
+        # if(self.show):
+        #     plt.subplot(221), plt.imshow(self.confidence), plt.title("confidence")
+        #     plt.subplot(222), plt.imshow(self.data), plt.title("data weight")
+        #     plt.subplot(223), plt.imshow(priority), plt.title("priority")
+        #     plt.subplot(224), plt.imshow(self.fill_range), plt.title("fill range")
+        #     plt.show()
+
+        pt = np.array([29, 168])
+        patch = self.get_patch(pt)
+        patch_conf = self.get_data(self.confidence, patch)
+        patch_data = self.get_data(self.data, patch)
+        pathc_prior = self.get_data(priority, patch)
+        patch_fill = self.get_data(self.fill_range, patch)
+
+        if(self.show):
+            plt.subplot(221), plt.imshow(patch_conf), plt.title("confidence")
+            print("patch_conf")
+            print(patch_conf)
+            plt.subplot(222), plt.imshow(patch_data), plt.title("data weight")
+            plt.subplot(223), plt.imshow(pathc_prior), plt.title("priority")
+            plt.subplot(224), plt.imshow(patch_fill), plt.title("fill range")
+            plt.show()
+
+
+        print("priority = ", priority)
         self.priority_q = np.array([priority[pt[0], pt[1]] for pt in self.fill_front])
 
     def get_patch_distance(self, target_patch, dst_patch):
@@ -209,78 +233,94 @@ class Inpainter:
         target_patch = self.get_patch(target_point)
         target_patch_mask = self.get_data(self.fill_range, target_patch)
         target_data = self.get_data(self.fill_image, target_patch)
-        if(self.show == True):
-            plt.subplot(221), plt.imshow(target_data)
+        to_be_fill = copy.deepcopy(target_patch_mask)
+        old_img = copy.deepcopy(target_data)
         # get the coordinate of the position to be fill
-        coord_to_fill = np.where(target_patch_mask == 1)
-        # print("coord_to_fill :")
-        # print(coord_to_fill[0])
-        # print(coord_to_fill[1])
+        print("target_patch_mask = ", target_patch_mask)
         
         if approx == True:
             dst_patch = self.aprox_best_match(target_point)
         else:
             dst_patch = self.find_best_match(target_point)
 
-        # plt.subplot(131), plt.imshow(target_data), plt.title("image to fill")
-        # plt.subplot(132), plt.imshow(self.get_data(self.img, dst_patch)), plt.title("Global search")
-        # plt.subplot(133), plt.imshow(self.get_data(self.img, apx_patch)), plt.title("Approximate search")
-        # plt.show()
-        dst_data = self.get_data(self.fill_image, dst_patch)
+        dst_data = copy.deepcopy(self.get_data(self.fill_image, dst_patch))
+
+        fill_x_y = [[], []]
 
         # fill the blank region
-        target_data[coord_to_fill[0], coord_to_fill[1]] = dst_data[coord_to_fill[0], coord_to_fill[1]]
+        for i in range(target_patch_mask.shape[0]):
+            for j in range(target_patch_mask.shape[1]):
+                if(target_patch_mask[i][j] >0):
+                    # print(i, j)
+                    target_data[i,j] = dst_data[i,j]
+                    fill_x_y[0].append(i)
+                    fill_x_y[1].append(j)
 
         # update the confidence in target patch
         target_confidence = self.get_data(self.confidence, target_patch)
-        target_confidence[coord_to_fill[0], coord_to_fill[1]] = self.confidence[target_point[0], target_point[1]]
+        target_confidence[fill_x_y[0], fill_x_y[1]] = self.confidence[target_point[0], target_point[1]]
         
-        # print(type(target_confidence), target_confidence.shape)
-
         # update the fill_range
         target_fill_range = self.get_data(self.fill_range, target_patch)
-        target_fill_range[coord_to_fill[0], coord_to_fill[1]] = 0
+        target_fill_range[fill_x_y[0], fill_x_y[1]] = 0
+        # print("fill_x_y")
+        # print(fill_x_y)
 
         # update the gray_img
         self.image_gray = cv2.cvtColor(self.fill_image, cv2.COLOR_BGR2GRAY)
 
         if(self.show == True):
-            plt.subplot(222), plt.imshow(dst_data)
-            plt.subplot(223), plt.imshow(target_data)
-            plt.subplot(224), plt.imshow(target_fill_range)
+            plt.subplot(321), plt.imshow(to_be_fill), plt.title("target data")
+            plt.subplot(322), plt.imshow(old_img), plt.title("old img")
+            plt.subplot(323), plt.imshow(dst_data), plt.title("destiny data")
+            plt.subplot(324), plt.imshow(target_data), plt.title("fill task")
+            plt.subplot(325), plt.imshow(target_fill_range), plt.title("new fill range")
             plt.show()
 
+    def red_square(self, patch:np.ndarray):
 
-    def exe_inpaint(self, filename:str, approx = False, step = 1000):
-        while self.fill_range.sum() > 0:
+        plt.plot([patch[1, 0], patch[1, 0]], [patch[0, 0], patch[0, 1]], color = "r")
+        plt.plot([patch[1, 1], patch[1, 1]], [patch[0, 0], patch[0, 1]], color = "r")
+        plt.plot([patch[1,0],  patch[1, 1]], [patch[0, 0], patch[0, 0]], color = "r")
+        plt.plot([patch[1,0],  patch[1, 1]], [patch[0, 1], patch[0, 1]], color = "r")
+
+    def exe_inpaint(self, filename:str, approx = False, step = 1000, area = 1):
+        
+        ip_area = self.fill_range.sum()*(1-area)
+
+        while self.fill_range.sum() > ip_area:
             self.update_contours()
             self.update_prioity()
             # find the point with max priority
             target_point = self.fill_front[self.priority_q.argmax()]
-            # plt.subplot(121), plt.imshow(self.fill_image)
+            old_fill = copy.deepcopy(self.fill_image)
             print("{} points left to fill ".format(self.fill_range.sum()))
             print("target_point = ", target_point)
             self.fill_patch(target_point, approx, step)
 
-            # plt.subplot(122), plt.imshow(self.fill_image)
-            # plt.show()
-        
+            if(self.show):
+                plt.subplot(121), plt.imshow(old_fill)
+                self.red_square(self.get_patch(target_point))
+                plt.subplot(122), plt.imshow(self.fill_image)
+                self.red_square(self.get_patch(target_point))
+                plt.show()
+
+        plt.imshow(self.fill_image)
+        plt.show()
         # save
         cv2.imwrite(filename, self.fill_image)
 
 
-
-
-
 if __name__ == "__main__":
-    img_src = "D:\Courses_2022_Fall\ECE4513\Projects\src\MyCode\mask_color.jpg"
-    mask_src = "D:\Courses_2022_Fall\ECE4513\Projects\src\MyCode\mask_black.jpg"
+    img_src = r"D:\Courses_2022_Fall\ECE4513\Projects\src\MyCode\utils\poission_blending_input\2\coler_mask.jpg"
+    mask_src = r"D:\Courses_2022_Fall\ECE4513\Projects\src\MyCode\utils\poission_blending_input\2\black_mask.jpg"
+
     patch_size = 9
 
     img = cv2.imread(img_src)
     mask = cv2.imread(mask_src, 0)
 
-    inpainter = Inpainter(img, mask, patch_size)
+    inpainter = Inpainter(img, mask, patch_size, show=False)
     inpainter.exe_inpaint("approx1000.jpg", approx=True, step = 1000)
-    inpainter.exe_inpaint("approx10000.jpg", approx=True, step = 10000)
+    # inpainter.exe_inpaint("approx10000.jpg", approx=True, step = 10000)
     # inpainter.exe_inpaint("output.jpg")
