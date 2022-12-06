@@ -16,3 +16,4 @@ python Musk.py
 inpainter = Inpainter(img, mask, patch_size, show=False)
 ```
 show = True的时候展示每步填充步骤
+- 12-6整理文件
