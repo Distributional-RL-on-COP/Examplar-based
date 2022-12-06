@@ -74,7 +74,7 @@ if __name__ == "__main__":
 
     # Convert it to grayscale
     img_gray = cv2.cvtColor(img_rgb, cv2.COLOR_BGR2GRAY)
-
+            
     # Read the template
     mask = cv2.imread(r"utils\template-matching-img\mask.jpg")
     mask = normalize_mask(mask)

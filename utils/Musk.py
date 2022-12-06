@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from matplotlib.pyplot import ginput
 import copy
 
-def get_square_mask(img, width = 200, height = 160):
+def click_square_mask(img, width = 200, height = 160):
     plt.imshow(img)
 
     mask_black = 255*np.zeros(img.shape)
@@ -23,12 +23,34 @@ def get_square_mask(img, width = 200, height = 160):
     plt.savefig("masks.jpg")
     plt.show()
     return mask_img, mask_black[:,:,0]
+
+def get_mask(img:np.ndarray, mask:np.ndarray):
+    # threadhold
+    gray_mask = cv2.cvtColor(mask, cv2.COLOR_RGB2GRAY)
+    res = np.zeros(mask.shape)
+
+    black_mask = (gray_mask>50)*np.ones(gray_mask.shape)
+
+    r, g, b = cv2.split(img)
+    r = r*(1-black_mask)
+    g = g*(1-black_mask)
+    b = b*(1-black_mask)
+
+    return black_mask, cv2.merge((b,g,r))
         
 if __name__ == "__main__":
     
-    new_im = cv2.imread("./img\input1.jpg")
-    print(new_im.shape)
-    # gray_image = cv2.cvtColor(new_im, cv2.COLOR_RGB2GRAY)
-    mask_color, mask_black = get_square_mask(new_im)
-    cv2.imwrite("mask_black.jpg", mask_black)
-    cv2.imwrite("mask_color.jpg", mask_color)
+    # new_im = cv2.imread("./img\input1.jpg")
+    # print(new_im.shape)
+    # # gray_image = cv2.cvtColor(new_im, cv2.COLOR_RGB2GRAY)
+    # mask_color, mask_black = click_square_mask(new_im)
+    # cv2.imwrite("mask_black.jpg", mask_black)
+    # cv2.imwrite("mask_color.jpg", mask_color)
+
+    img = cv2.imread(r"D:\Courses_2022_Fall\ECE4513\Projects\src\MyCode\utils\poission_blending_input\2\target.jpg")
+    mask = cv2.imread(r"D:\Courses_2022_Fall\ECE4513\Projects\src\MyCode\utils\poission_blending_input\2\mask.jpg")
+    mask_black, mask_color = get_mask(img, mask)
+    plt.imshow(mask_color)
+    plt.show()
+    cv2.imwrite("black_mask.jpg", mask_black)
+    cv2.imwrite("coler_mask.jpg", mask_color)
