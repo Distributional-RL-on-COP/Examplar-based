@@ -7,7 +7,7 @@ import random
 from tqdm import tqdm
 
 class Inpainter:
-    def __init__(self, img:np.ndarray, mask:np.ndarray, patch_size = 9, show = False):
+    def __init__(self, img:np.ndarray, mask:np.ndarray, patch_size = 9, show = False, comp_rate = 1):
 
         self.img = img
         self.mask = mask
@@ -26,6 +26,7 @@ class Inpainter:
         self.priority_q = None
 
         self.show = show
+        self.comp_rate = comp_rate
 
     def update_contours(self):
         """
@@ -62,7 +63,7 @@ class Inpainter:
         return np.array(patch_range)
 
     def update_C(self):
-        print()
+        
         for point in self.fill_front:
             patch = self.get_patch(point)
             confidence_sum = self.get_data(self.confidence, patch).sum()
@@ -146,15 +147,13 @@ class Inpainter:
             plt.show()
 
 
-        print("priority = ", priority)
+        # print("priority = ", priority)
         self.priority_q = np.array([priority[pt[0], pt[1]] for pt in self.fill_front])
 
     def get_patch_distance(self, target_patch, dst_patch):
-
+        # TODO 
+        # cv.matchTemplete(优化)
         return (((dst_patch[:, 0] - target_patch[:, 0])**2).sum())**0.5
-
-    # def get_patch_difference(self, target_point, dst_patch):
-    #     pass
 
     def find_best_match(self, target_point):
         """
@@ -236,7 +235,7 @@ class Inpainter:
         to_be_fill = copy.deepcopy(target_patch_mask)
         old_img = copy.deepcopy(target_data)
         # get the coordinate of the position to be fill
-        print("target_patch_mask = ", target_patch_mask)
+        # print("target_patch_mask = ", target_patch_mask)
         
         if approx == True:
             dst_patch = self.aprox_best_match(target_point)
@@ -284,18 +283,20 @@ class Inpainter:
         plt.plot([patch[1,0],  patch[1, 1]], [patch[0, 0], patch[0, 0]], color = "r")
         plt.plot([patch[1,0],  patch[1, 1]], [patch[0, 1], patch[0, 1]], color = "r")
 
-    def exe_inpaint(self, filename:str, approx = False, step = 1000, area = 1):
+    def exe_inpaint(self, filename:str, approx = False, step = 1000):
         
-        ip_area = self.fill_range.sum()*(1-area)
+        ip_area = self.fill_range.sum()*(1-self.comp_rate)
+        total = copy.deepcopy(self.fill_range.sum())
 
         while self.fill_range.sum() > ip_area:
+        # while (total-self.fill_range.sum()).astype(int) in tqdm(range(ip_area.astype(int))):
             self.update_contours()
             self.update_prioity()
             # find the point with max priority
             target_point = self.fill_front[self.priority_q.argmax()]
             old_fill = copy.deepcopy(self.fill_image)
             print("{} points left to fill ".format(self.fill_range.sum()))
-            print("target_point = ", target_point)
+            # print("target_point = ", target_point)
             self.fill_patch(target_point, approx, step)
 
             if(self.show):
@@ -308,19 +309,29 @@ class Inpainter:
         plt.imshow(self.fill_image)
         plt.show()
         # save
-        cv2.imwrite(filename, self.fill_image)
+        cv2.imwrite(filename+".jpg", self.fill_image)
+        cv2.imwrite(filename+"mask.jpg", self.fill_range)
 
 
 if __name__ == "__main__":
-    img_src = r"D:\Courses_2022_Fall\ECE4513\Projects\src\MyCode\utils\poission_blending_input\2\coler_mask.jpg"
-    mask_src = r"D:\Courses_2022_Fall\ECE4513\Projects\src\MyCode\utils\poission_blending_input\2\black_mask.jpg"
+    # img_src = r"D:\Courses_2022_Fall\ECE4513\Projects\src\MyCode\utils\poission_blending_input\2\coler_mask.jpg"
+    # mask_src = r"D:\Courses_2022_Fall\ECE4513\Projects\src\MyCode\utils\poission_blending_input\2\black_mask.jpg"
+# 
+    # img_src = r"D:\Courses_2022_Fall\ECE4513\Projects\src\MyCode\utils\template-matching-img\original_with_mask.jpg"
+    # mask_src = r"D:\Courses_2022_Fall\ECE4513\Projects\src\MyCode\utils\template-matching-img\mask.jpg"
 
-    patch_size = 9
+    img_src = r"img\bird\color_mask.jpg"
+    mask_src = r"img\bird\black_mask.jpg"
 
+    patch_size = 5
+
+    # The mask max is 1 not 255
     img = cv2.imread(img_src)
     mask = cv2.imread(mask_src, 0)
 
-    inpainter = Inpainter(img, mask, patch_size, show=True)
-    inpainter.exe_inpaint("approx1000.jpg", approx=True, step = 1000)
+    mask[mask>0] = 1
+
+    inpainter = Inpainter(img, mask, patch_size, show=False, comp_rate = 1)
+    inpainter.exe_inpaint("approx10000", approx=True, step = 10000)
     # inpainter.exe_inpaint("approx10000.jpg", approx=True, step = 10000)
     # inpainter.exe_inpaint("output.jpg")

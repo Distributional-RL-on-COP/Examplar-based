@@ -47,9 +47,9 @@ if __name__ == "__main__":
     # cv2.imwrite("mask_black.jpg", mask_black)
     # cv2.imwrite("mask_color.jpg", mask_color)
 
-    img = cv2.imread(r"D:\Courses_2022_Fall\ECE4513\Projects\src\MyCode\utils\poission_blending_input\2\target.jpg")
-    mask = cv2.imread(r"D:\Courses_2022_Fall\ECE4513\Projects\src\MyCode\utils\poission_blending_input\2\mask.jpg")
-    mask_black, mask_color = get_mask(img, mask)
+    img = cv2.imread(r"img\bird\bird_origin.jpg")
+    # mask_black, mask_color = get_mask(img, mask)
+    mask_black, mask_color = click_square_mask(img)
     plt.imshow(mask_color)
     plt.show()
     cv2.imwrite("black_mask.jpg", mask_black)

@@ -172,8 +172,9 @@ class Segmentater:
 if __name__ == "__main__":
 
     # 10x12
-    img = cv2.imread(r'D:\Courses_2022_Fall\ECE4513\Projects\src\MyCode\utils\segmentation-based-on-graph-cut-and-density-estimation\input1.jpg')
-    img = img[320:400, 510:580]
-
+    # img = cv2.imread(r'D:/Courses_2022_Fall/ECE4513/Projects/src/MyCode/utils/segmentation-based-on-graph-cut-and-density-estimation/input1.jpg')
+    img = cv2.imread(r"D:\Courses_2022_Fall\ECE4513\Projects\src\MyCode\img\chair\image.jpg")
+    # img = img[320:400, 510:580]
+    
     seg = Segmentater(img)
 

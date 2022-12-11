@@ -5,10 +5,173 @@ import cv2
 from matplotlib import pyplot as plt
 import math
 
+import threading
+
+import os
 # code for different areas in pictire
 MASK = 0                 
 BOUNDRY = 1
 OUTSIDE = 2
+
+class SceneCompletor:
+
+    def __init__(self, original_img:np.ndarray, matching_img:np.ndarray, mask:np.ndarray, 
+                        show_matching_part:bool, dir_name:str = None):
+        
+        self.original_img = original_img
+        self.matching_img = matching_img
+        self.mask = mask
+        self.show_matching_part = show_matching_part
+        self.dir_name = dir_name
+
+        self.best_matching = None
+        self.template_in_original = None
+        self.template_mask = None
+
+        self.pois_result = None
+
+    def multi_graph_match(self):
+        # find the best matching in the graphs
+        if self.dir_name == None:
+            print("No directory.")
+            return
+
+        # find first 10
+        cnt = 0
+        best = 0
+
+        min_SSD = float('inf')
+
+        for item in os.listdir(path=self.dir_name):
+            # if(cnt == 100):
+            #     break
+            img = cv2.imread(os.path.join(self.dir_name, item))
+            self.matching_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            ssd = self.template_matching()
+            print("file {}.ssd = {}".format(cnt, ssd))
+            if(min_SSD > ssd):
+                min_SSD = ssd
+                best_template_mask = self.template_mask
+                best_matching = self.best_matching
+                best_template_in_original = self.template_in_original
+                best = cnt
+
+            cnt += 1
+
+        self.template_mask = best_template_mask
+        self.best_matching = best_matching
+        self.template_in_original = best_template_in_original
+            
+        print("best = {}, ssd = {}".format(best, min_SSD))
+
+        plt.subplot(221), plt.imshow(self.template_in_original)
+        plt.subplot(222), plt.imshow(self.best_matching)
+        plt.subplot(223), plt.imshow(self.template_mask)
+        plt.show()
+            
+    def template_matching(self):
+        '''
+        Function to perform template matching
+
+        Args:
+
+        original_img: The RGB original image with mask 
+
+        matching_img: The RGB matching image
+
+        mask: 2_D Normal mask for orginal image. The unwanted region is labelled as 1
+
+        show_matching_part: True will show the best matching patch (rectangle) in the matching image 
+
+        Return
+
+        best_matching: The area in the matching_img such that best matches the template
+
+        template_in_original: template region in the original image
+
+        template_mask: Because the orginal image has mask. we do not want the mask region
+                       in the template affect the similar score 
+
+        '''
+        original_img = self.original_img
+        matching_img = self.matching_img
+        mask = self.mask
+        show_matching_part = self.show_matching_part
+
+        x_min, x_max, y_min, y_max = get_templete_coordinate(mask, coef=1.5)
+
+        # read the matching image
+        matching_img_gray = cv2.cvtColor(matching_img, cv2.COLOR_RGB2GRAY)
+
+        # read the orginal image with mask 
+        original_img_gray = cv2.cvtColor(original_img, cv2.COLOR_RGB2GRAY)
+
+        # Get the template 
+        template = original_img_gray[x_min:x_max, y_min:y_max]
+
+        # Get the mask for template
+        template_mask = (mask == 0).astype(np.uint8)
+        template_mask = template_mask[x_min:x_max, y_min:y_max]
+
+        # Do the template matching
+        res = cv2.matchTemplate(matching_img_gray, template, cv2.TM_SQDIFF, mask = template_mask)
+
+        (h, w) = template.shape
+
+        # show the similarity
+        SSD_min = np.min(res)
+        # print(SSD_min)
+
+        # if want to see the matching patch in the matching image 
+        # show the rectangle patch in the matching image 
+        loc = np.where(res == np.min(res))
+        for pt in zip(*loc[::-1]):
+            if show_matching_part == True:
+                cv2.rectangle(matching_img, pt, (pt[0] + w, pt[1] + h), (0, 255, 255), 2)
+                plt.imshow(matching_img)
+
+        self.template_mask = template_mask
+        self.best_matching = matching_img[pt[1]:pt[1] + h,pt[0]:pt[0] + w]
+        self.template_in_original = original_img[x_min:x_max, y_min:y_max]
+
+        return SSD_min
+
+    def poission_blending(self):
+
+        source_img = self.best_matching 
+        target_img = self.template_in_original
+
+        # 因为原图片在mask部位是黑色的，但是我们的mask
+        # 因为一些computational error不是正正好好每一个都和原图片上的mask对应
+        mask_ = scpt.template_mask == 0
+        mask = enlarge_mask(mask_)
+
+        
+        num_channels = source_img.shape[-1]
+
+        temp = []
+        for i in range(num_channels):
+            # 做加速process 并行
+            result = process(source_img[:,:,i], target_img[:,:,i], mask)
+            temp.append(result)
+            print(f"Finish channel {i}")
+        # Merge the channels back into one image
+        result = cv2.merge((temp[0], temp[1], temp[2]))
+
+        # Write result
+        self.pois_result = result
+        return result
+
+    def impaint(self):
+
+        original_img = self.original_img
+        mask = self.mask
+        blending_img = self.pois_result
+
+        x_min, x_max, y_min, y_max = get_templete_coordinate(mask, coef=1.5)
+        original_img[x_min:x_max, y_min:y_max] = blending_img
+        return original_img
+
 
 def in_mask(location, mask):
     '''
@@ -99,7 +262,7 @@ def get_templete_coordinate(mask, coef = 1.2):
     Return
     The four coordinaates 
     '''
-    mask_height, mask_width, channel_num = mask.shape
+    mask_height, mask_width = mask.shape
 
     x, y = np.nonzero(mask)
     x_min = np.min(x)
@@ -118,9 +281,9 @@ def get_templete_coordinate(mask, coef = 1.2):
     h = coef * h
 
     x_min = np.max([x_mid - w/2, 0])
-    x_max = np.min([x_mid + w/2, mask_width])
+    x_max = np.min([x_mid + w/2, mask_height])
     y_min = np.max([y_mid - h/2, 0])
-    y_max = np.min([y_mid + h/2, mask_height])
+    y_max = np.min([y_mid + h/2, mask_width])
 
     return int(x_min), int(x_max), int(y_min), int(y_max)
 
@@ -175,95 +338,18 @@ def process(source, target, mask):
     return composite
 
 
-def normalize_mask(mask_img):
+def normalize_mask(mask):
     # Normalize mask to range [0,1]
-    mask = mask_img.astype(np.float64) / 255.
+
+    if(len(mask.shape)>2):
+        print("3 Channel, deduce one channel...")
+        mask = mask[:, :, 0]
+
     # Make mask binary
-    mask[mask != 1] = 0
+    mask[mask == 0] = 0
     mask[mask != 0] = 1
 
-    # Trim to one channel
-    mask = mask[:,:,0]
-
     return mask
-
-
-def poission_blending(source_img, target_img, mask):
-    num_channels = source_img.shape[-1]
-
-    temp = []
-    for i in range(num_channels):
-        result = process(source_img[:,:,i], target_img[:,:,i], mask)
-        temp.append(result)
-        print(f"Finish channel {i}")
-    # Merge the channels back into one image
-    result = cv2.merge((temp[0], temp[1], temp[2]))
-
-    # Write result
-    return result
-
-
-
-def template_matching(original_img, matching_img, mask, show_matching_part = False):
-    '''
-    Function to perform template matching
-
-    Args:
-
-    original_img: The RGB original image with mask 
-
-    matching_img: The RGB matching image
-
-    mask: 2_D Normal mask for orginal image. The unwanted region is labelled as 1
-
-    show_matching_part: True will show the best matching patch (rectangle) in the matching image 
-    
-    Return
-
-    best_matching: The area in the matching_img such that best matches the template
-
-    template_in_original: template region in the original image
-
-    template_mask: Because the orginal image has mask. we do not want the mask region
-                   in the template affect the similar score 
-
-    '''
-
-    x_min, x_max, y_min, y_max = get_templete_coordinate(mask, coef=1.5)
-
-    # read the matching image
-    matching_img_gray = cv2.cvtColor(matching_img, cv2.COLOR_RGB2GRAY)
-
-    # read the orginal image with mask 
-    original_img_gray = cv2.cvtColor(original_img, cv2.COLOR_RGB2GRAY)
-
-    # Get the template 
-    template = original_img_gray[x_min:x_max, y_min:y_max]
-
-    # Get the mask for template
-    template_mask = (mask == 0).astype(np.uint8)
-    template_mask = template_mask[x_min:x_max, y_min:y_max]
-
-    # Do the template matching
-    res = cv2.matchTemplate(matching_img_gray, template, cv2.TM_SQDIFF, mask = template_mask)
-
-    (h, w) = template.shape
-
-    # show the similarity
-    print(np.min(res))
-
-    # if want to see the matching patch in the matching image 
-    # show the rectangle patch in the matching image 
-    loc = np.where(res == np.min(res))
-    for pt in zip(*loc[::-1]):
-        if show_matching_part == True:
-            cv2.rectangle(matching_img, pt, (pt[0] + w, pt[1] + h), (0, 255, 255), 2)
-            plt.imshow(matching_img)
-
-    best_matching = matching_img[pt[1]:pt[1] + h,pt[0]:pt[0] + w]
-    template_in_original = original_img[x_min:x_max, y_min:y_max]
-
-    return best_matching, template_in_original, template_mask
 
 def three_dimention_mask(mask):
     (x,y) = mask.shape
@@ -285,48 +371,29 @@ def enlarge_mask(mask):
 
     return larger_mask
 
-def impaint(original_img, mask, blending_img):
-    x_min, x_max, y_min, y_max = get_templete_coordinate(mask, coef=1.5)
-    original_img[x_min:x_max, y_min:y_max] = blending_img
-    return original_img
-
 if __name__ == "__main__":
 
     # First do template matching
-    mask = cv2.imread("utils/template-matching-img/approx10000mask.jpg")
-    # mask = normalize_mask(mask)
+    mask = cv2.imread(r"img\bird\approx10000mask.jpg")
+    mask = normalize_mask(mask)
 
     matching_img = cv2.imread("utils/template-matching-img/matching.jpg")
     matching_img = cv2.cvtColor(matching_img, cv2.COLOR_BGR2RGB)
 
-    original_img = cv2.imread("utils/template-matching-img/approx10000.jpg")
+    original_img = cv2.imread(r"img\bird\approx10000.jpg")
     original_img = cv2.cvtColor(original_img, cv2.COLOR_BGR2RGB)
 
-    best_matching, template_in_original, template_mask = template_matching(original_img, matching_img, mask)
+    scpt = SceneCompletor(original_img, matching_img, mask, show_matching_part = True, 
+            dir_name=r"D:\Courses_2022_Fall\ECE4513\Projects\src\MyCode\img\2k_random_test")
 
-    # 对上面的图片进行可视化
-    mask_ = template_mask == 0
-    plt.subplot(2,2,1)
-    plt.imshow(best_matching)
-    plt.subplot(2,2,2)
-    plt.imshow(template_in_original)
-    plt.subplot(2,2,3)
-    plt.imshow(mask_,"gray")
+    scpt.template_matching()
+    # scpt.multi_graph_match()
 
+    r = scpt.poission_blending()
 
-    # 因为原图片在mask部位是黑色的，但是我们的mask
-    # 因为一些computational error不是正正好好每一个都和原图片上的mask对应
-    l_mask = enlarge_mask(mask_)
-    plt.subplot(2,2,4)
-    plt.imshow(l_mask,"gray")
+    impaint_img = scpt.impaint()
+    plt.imshow(impaint_img)
     plt.show()
 
-
-    # 因为原图片在mask部位是黑色的，但是我们的mask
-    # 因为一些computational error不是正正好好每一个都和原图片上的mask对应
-    l_mask = enlarge_mask(mask_)
-    r = poission_blending(best_matching, template_in_original, l_mask)
-    plt.imshow(r)
-
-    # impaint_img = impaint(original_img, mask, r)
-    # plt.imshow(impaint_img)
+    impaint_img = cv2.cvtColor(original_img, cv2.COLOR_BGR2RGB)
+    cv2.imwrite()
